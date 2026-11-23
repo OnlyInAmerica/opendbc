@@ -29,7 +29,6 @@
 // hybrid powertrain messages, on the alt bus
 #define MSG_SUBARU_Cruise_Status_2       0x27U
 #define MSG_SUBARU_Throttle_Hybrid       0x168U
-#define MSG_SUBARU_Brake_Hybrid          0x226U
 
 #define MSG_SUBARU_ES_LKAS               0x122U
 #define MSG_SUBARU_ES_Distance           0x221U
@@ -56,12 +55,11 @@
   {.msg = {{MSG_SUBARU_Brake_Status,    (alt_bus),       8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
   {.msg = {{MSG_SUBARU_CruiseControl,   (alt_bus),       8, 20U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
 
-// Hybrids report driver gas, driver brake and the ACC state on the alt bus instead. Brake_Hybrid has no checksum or counter
+// Hybrids report driver gas, driver brake and the ACC state on the alt bus instead
 #define SUBARU_HYBRID_RX_CHECKS                                                                                                                             \
   {.msg = {{MSG_SUBARU_Throttle_Hybrid, SUBARU_ALT_BUS,  8, 40U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
   {.msg = {{MSG_SUBARU_Steering_Torque, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
   {.msg = {{MSG_SUBARU_Wheel_Speeds,    SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
-  {.msg = {{MSG_SUBARU_Brake_Hybrid,    SUBARU_ALT_BUS,  8, 40U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}}, \
   {.msg = {{MSG_SUBARU_Cruise_Status_2, SUBARU_ALT_BUS,  8, 100U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                         \
 
 static uint32_t subaru_get_checksum(const CANPacket_t *msg) {
@@ -107,11 +105,8 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
       pcm_cruise_check(cruise_engaged);
     }
 
-    if (msg_matches(msg, MSG_SUBARU_Brake_Hybrid, SUBARU_ALT_BUS)) {
-      safety.brake_pressed = GET_BIT(msg, 37U);
-    }
-
     if (msg_matches(msg, MSG_SUBARU_Throttle_Hybrid, SUBARU_ALT_BUS)) {
+      safety.brake_pressed = ((msg->data[1] >> 4) & 0x3U) != 0U;
       safety.gas_pressed = msg->data[4] != 0U;
     }
   } else {

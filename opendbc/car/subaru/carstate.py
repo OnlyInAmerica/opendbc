@@ -26,8 +26,8 @@ class CarState(CarStateBase):
     if self.CP.flags & SubaruFlags.PREGLOBAL:
       ret.brakePressed = cp.vl["Brake_Pedal"]["Brake_Pedal"] > 0
     elif self.CP.flags & SubaruFlags.HYBRID:
-      # Brake_Status->Brake is always zero on hybrids
-      ret.brakePressed = cp_alt.vl["Brake_Hybrid"]["Brake"] == 1
+      # Brake_Status->Brake is always zero on hybrids. The hybrid ECU reports the brake pedal switch, which also cancels the stock ACC
+      ret.brakePressed = throttle_msg["Brake"] != 0
     else:
       cp_brakes = cp_alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else cp
       ret.brakePressed = cp_brakes.vl["Brake_Status"]["Brake"] == 1
