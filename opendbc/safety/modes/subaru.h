@@ -34,10 +34,12 @@
 #define MSG_SUBARU_ES_Distance           0x221U
 #define MSG_SUBARU_ES_DashStatus         0x321U
 #define MSG_SUBARU_ES_LKAS_State         0x322U
+#define MSG_SUBARU_Dashlights            0x390U
 #define MSG_SUBARU_ES_Infotainment       0x323U
 
 #define SUBARU_MAIN_BUS 0U
 #define SUBARU_ALT_BUS  1U
+#define SUBARU_CAM_BUS  2U
 
 #define SUBARU_BASE_TX_MSGS(alt_bus, lkas_msg) \
   {(lkas_msg),                   SUBARU_MAIN_BUS, 8, .check_relay = true},  \
@@ -184,6 +186,8 @@ static safety_config subaru_init(uint16_t param) {
   // hybrids have no ES_Distance, so there is no cancel message to allow
   static const CanMsg SUBARU_HYBRID_TX_MSGS[] = {
     SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
+    // DEBUG (seat belt cancel experiment): the car's Dashlights is blocked from the camera and resent by openpilot
+    {MSG_SUBARU_Dashlights, SUBARU_CAM_BUS, 8, .check_relay = true},
   };
 
   const uint16_t SUBARU_PARAM_GEN2 = 1;

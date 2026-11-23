@@ -67,6 +67,31 @@ def create_es_distance(packer, frame, es_distance_msg, bus, pcm_cancel_cmd, long
   return packer.make_can_msg("ES_Distance", bus, values)
 
 
+def create_dashlights(packer, dashlights_msg, seatbelt_unlatched):
+  # DEBUG (seat belt cancel experiment): the car's Dashlights, resent to the camera only.
+  # Every bit is copied, including the counter, so the camera sees the same frame apart from the seat belt
+  values = {s: dashlights_msg[s] for s in [
+    "COUNTER",
+    "Signal1",
+    "UNITS",
+    "Signal2",
+    "ICY_ROAD",
+    "Signal3",
+    "SEATBELT_FL",
+    "Signal4",
+    "LEFT_BLINKER",
+    "RIGHT_BLINKER",
+    "Signal5",
+    "STOP_START",
+    "Signal6",
+  ]}
+
+  if seatbelt_unlatched:
+    values["SEATBELT_FL"] = 1
+
+  return packer.make_can_msg("Dashlights", CanBus.camera, values)
+
+
 def create_es_lkas_state(packer, frame, es_lkas_state_msg, enabled, visual_alert, left_line, right_line, left_lane_depart, right_lane_depart):
   values = {s: es_lkas_state_msg[s] for s in [
     "CHECKSUM",

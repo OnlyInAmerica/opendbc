@@ -23,6 +23,7 @@ class SubaruMsg(enum.IntEnum):
   ES_Distance       = 0x221
   ES_DashStatus     = 0x321
   ES_LKAS_State     = 0x322
+  Dashlights        = 0x390
   ES_Infotainment   = 0x323
 
 
@@ -124,7 +125,12 @@ class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
   DBC = "subaru_global_2020_hybrid_generated"
   SAFETY_PARAM = SubaruSafetyFlags.HYBRID
 
-  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance]
+  # DEBUG (seat belt cancel experiment): Dashlights is blocked from the camera and resent by openpilot
+  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance] + [[SubaruMsg.Dashlights, SUBARU_CAM_BUS]]
+  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
+                                               SubaruMsg.ES_Infotainment),
+                             SUBARU_CAM_BUS: (SubaruMsg.Dashlights,)}
+  FWD_BLACKLISTED_ADDRS = {SUBARU_CAM_BUS: fwd_blacklisted_addr()[SUBARU_CAM_BUS], SUBARU_MAIN_BUS: [SubaruMsg.Dashlights]}
 
   def _user_brake_msg(self, brake):
     self._brake = brake

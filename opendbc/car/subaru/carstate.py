@@ -129,6 +129,8 @@ class CarState(CarStateBase):
                      (cp_cam.vl["ES_LKAS_State"]["LKAS_Alert"] == 2)
 
       self.es_lkas_state_msg = copy.copy(cp_cam.vl["ES_LKAS_State"])
+      # DEBUG (seat belt cancel experiment): the car's Dashlights is replaced on its way to the camera
+      self.dashlights_msg = copy.copy(cp.vl["Dashlights"])
       self.es_brake_msg = copy.copy(cp_es_brake.vl["ES_Brake"])
 
       # 8 is known AEB, there are a few other values related to AEB we ignore
