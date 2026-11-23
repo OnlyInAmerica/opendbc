@@ -25,12 +25,18 @@ class CarState(CarStateBase):
     ret.gasPressed = throttle_msg["Throttle_Pedal"] > 1e-5
     if self.CP.flags & SubaruFlags.PREGLOBAL:
       ret.brakePressed = cp.vl["Brake_Pedal"]["Brake_Pedal"] > 0
+    elif self.CP.flags & SubaruFlags.HYBRID:
+      # Brake_Status->Brake is always zero on hybrids
+      ret.brakePressed = cp_alt.vl["Brake_Hybrid"]["Brake"] == 1
     else:
       cp_brakes = cp_alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else cp
       ret.brakePressed = cp_brakes.vl["Brake_Status"]["Brake"] == 1
 
-    cp_es_distance = cp_alt if self.CP.flags & (SubaruFlags.GLOBAL_GEN2 | SubaruFlags.HYBRID) else cp_cam
-    if not (self.CP.flags & SubaruFlags.HYBRID):
+    cp_es_distance = cp_alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else cp_cam
+    if self.CP.flags & SubaruFlags.HYBRID:
+      # ES_Distance is missing on hybrids
+      ret.accFaulted = cp_cam.vl["ES_DashStatus"]["Cruise_Fault"] == 1
+    else:
       eyesight_fault = bool(cp_es_distance.vl["ES_Distance"]["Cruise_Fault"])
 
       # if openpilot is controlling long, an eyesight fault is a non-critical fault. otherwise it's an ACC fault
@@ -83,13 +89,17 @@ class CarState(CarStateBase):
     cp_cruise = cp_alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else cp
     cp_es_brake = cp_alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else cp_cam
 
-    if self.CP.flags & (SubaruFlags.HYBRID | SubaruFlags.LKAS_ANGLE):
+    if self.CP.flags & SubaruFlags.HYBRID:
+      # CruiseControl and ES_Status are missing on hybrids. EyeSight sends its ACC request to the hybrid system
+      # in Cruise_Status_2, which stays active through user gas override and standstill
+      ret.cruiseState.enabled = cp_alt.vl["Cruise_Status_2"]["Cruise_Activated"] != 0
+      ret.cruiseState.available = cp_cam.vl["ES_DashStatus"]['Cruise_On'] != 0
+    elif self.CP.flags & SubaruFlags.LKAS_ANGLE:
       # ES_DashStatus->Cruise_Activated_Dash is likely intended for the dash display only, as it falls
-      # during user gas override and at standstill. ES_Status is missing on hybrid, so we use ES_Brake instead
+      # during user gas override and at standstill, so we use ES_Brake instead
 
       # TODO: ES_Brake->Cruise_Activated has been seen staying high when Crosstrek 2025 angle LKAS user pressed
-      #  brake while engaged at a stop. ES_Status and ES_DashStatus->Signal7 correctly fell, but is either missing or
-      #  always zero on hybrids. Probably need to split angle & hybrid. 0x27 and 0x225 on hybrids may work for them.
+      #  brake while engaged at a stop. ES_Status and ES_DashStatus->Signal7 correctly fell.
       ret.cruiseState.enabled = cp_es_brake.vl["ES_Brake"]['Cruise_Activated'] != 0
       ret.cruiseState.available = cp_cam.vl["ES_DashStatus"]['Cruise_On'] != 0
     else:
@@ -121,12 +131,12 @@ class CarState(CarStateBase):
       self.es_lkas_state_msg = copy.copy(cp_cam.vl["ES_LKAS_State"])
       self.es_brake_msg = copy.copy(cp_es_brake.vl["ES_Brake"])
 
-      # TODO: Hybrid cars don't have ES_Distance, need a replacement
-      if not (self.CP.flags & SubaruFlags.HYBRID):
-        # 8 is known AEB, there are a few other values related to AEB we ignore
-        ret.stockAeb = (cp_es_distance.vl["ES_Brake"]["AEB_Status"] == 8) and \
-                       (cp_es_distance.vl["ES_Brake"]["Brake_Pressure"] != 0)
+      # 8 is known AEB, there are a few other values related to AEB we ignore
+      ret.stockAeb = (cp_es_brake.vl["ES_Brake"]["AEB_Status"] == 8) and \
+                     (cp_es_brake.vl["ES_Brake"]["Brake_Pressure"] != 0)
 
+      # Hybrid cars don't have ES_Distance, ES_Status or CruiseControl
+      if not (self.CP.flags & SubaruFlags.HYBRID):
         self.es_status_msg = copy.copy(cp_es_brake.vl["ES_Status"])
         self.cruise_control_msg = copy.copy(cp_cruise.vl["CruiseControl"])
 
