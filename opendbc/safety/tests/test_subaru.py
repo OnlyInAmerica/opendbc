@@ -119,18 +119,25 @@ class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
   TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance]
 
   def _user_brake_msg(self, brake):
-    values = {"Brake": brake}
-    return self.packer.make_can_msg_safety("Brake_Hybrid", SUBARU_ALT_BUS, values)
+    self._brake = brake
+    return self._throttle_hybrid_msg()
 
   def _user_gas_msg(self, gas):
-    values = {"Throttle_Pedal": gas}
-    return self.packer.make_can_msg_safety("Throttle_Hybrid", SUBARU_ALT_BUS, values)
+    self._gas = gas
+    return self._throttle_hybrid_msg()
+
+  def _throttle_hybrid_msg(self, bus=SUBARU_ALT_BUS):
+    # driver gas and the brake pedal switch are in the same message
+    values = {"Brake": 3 if self._brake else 0, "Throttle_Pedal": self._gas}
+    return self.packer.make_can_msg_safety("Throttle_Hybrid", bus, values)
 
   def _pcm_status_msg(self, enable):
     values = {"Cruise_Activated": enable}
     return self.packer.make_can_msg_safety("Cruise_Status_2", SUBARU_ALT_BUS, values)
 
   def setUp(self):
+    self._brake = False
+    self._gas = 0
     super().setUp()
     self.global_packer = CANPackerSafety("subaru_global_2017_generated")
 
@@ -152,10 +159,19 @@ class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
   def test_hybrid_signals_bus(self):
     # the hybrid powertrain messages are only read from the alt bus
     for bus in (SUBARU_MAIN_BUS, SUBARU_CAM_BUS):
-      self._rx(self.packer.make_can_msg_safety("Brake_Hybrid", bus, {"Brake": 1}))
-      self._rx(self.packer.make_can_msg_safety("Throttle_Hybrid", bus, {"Throttle_Pedal": 1}))
+      self._rx(self.packer.make_can_msg_safety("Throttle_Hybrid", bus, {"Brake": 3, "Throttle_Pedal": 1}))
       self._rx(self.packer.make_can_msg_safety("Cruise_Status_2", bus, {"Cruise_Activated": 1}))
       self.assertEqual((False, False, False), self._state())
+
+  def test_brake_hybrid_ignored(self):
+    # Brake_Hybrid has no checksum or counter, the brake pedal switch in Throttle_Hybrid is used instead
+    self._rx(self.packer.make_can_msg_safety("Brake_Hybrid", SUBARU_ALT_BUS, {"Brake": 1}))
+    self.assertFalse(self.safety.get_brake_pressed_prev())
+    for value in (1, 2, 3):
+      self._rx(self.packer.make_can_msg_safety("Throttle_Hybrid", SUBARU_ALT_BUS, {"Brake": value}))
+      self.assertTrue(self.safety.get_brake_pressed_prev())
+      self._rx(self.packer.make_can_msg_safety("Throttle_Hybrid", SUBARU_ALT_BUS, {"Brake": 0}))
+      self.assertFalse(self.safety.get_brake_pressed_prev())
 
   def test_cancel_message_blocked(self):
     values = {"Cruise_Cancel": 1, "Cruise_Throttle": self.INACTIVE_GAS}
