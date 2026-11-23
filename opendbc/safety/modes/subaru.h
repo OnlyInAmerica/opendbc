@@ -26,6 +26,11 @@
 #define MSG_SUBARU_Steering_Torque       0x119U
 #define MSG_SUBARU_Wheel_Speeds          0x13aU
 
+// hybrid powertrain messages, on the alt bus
+#define MSG_SUBARU_Cruise_Status_2       0x27U
+#define MSG_SUBARU_Throttle_Hybrid       0x168U
+#define MSG_SUBARU_Brake_Hybrid          0x226U
+
 #define MSG_SUBARU_ES_LKAS               0x122U
 #define MSG_SUBARU_ES_Distance           0x221U
 #define MSG_SUBARU_ES_DashStatus         0x321U
@@ -50,6 +55,14 @@
   {.msg = {{MSG_SUBARU_Wheel_Speeds,    (alt_bus),       8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
   {.msg = {{MSG_SUBARU_Brake_Status,    (alt_bus),       8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
   {.msg = {{MSG_SUBARU_CruiseControl,   (alt_bus),       8, 20U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
+
+// Hybrids report driver gas, driver brake and the ACC state on the alt bus instead. Brake_Hybrid has no checksum or counter
+#define SUBARU_HYBRID_RX_CHECKS                                                                                                                             \
+  {.msg = {{MSG_SUBARU_Throttle_Hybrid, SUBARU_ALT_BUS,  8, 40U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
+  {.msg = {{MSG_SUBARU_Steering_Torque, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
+  {.msg = {{MSG_SUBARU_Wheel_Speeds,    SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
+  {.msg = {{MSG_SUBARU_Brake_Hybrid,    SUBARU_ALT_BUS,  8, 40U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}}, \
+  {.msg = {{MSG_SUBARU_Cruise_Status_2, SUBARU_ALT_BUS,  8, 100U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                         \
 
 static uint32_t subaru_get_checksum(const CANPacket_t *msg) {
   return (uint8_t)msg->data[0];
@@ -76,12 +89,6 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
     update_sample(&safety.torque_driver, torque_driver_new);
   }
 
-  // enter controls on rising edge of ACC, exit controls on ACC off
-  if (msg_matches(msg, MSG_SUBARU_CruiseControl, alt_main_bus)) {
-    bool cruise_engaged = GET_BIT(msg, 41U);
-    pcm_cruise_check(cruise_engaged);
-  }
-
   // update vehicle moving with any non-zero wheel speed
   if (msg_matches(msg, MSG_SUBARU_Wheel_Speeds, alt_main_bus)) {
     uint32_t fr = (GET_BYTES_LE(msg, 1, 3) >> 4) & 0x1FFFU;
@@ -92,12 +99,35 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
     safety.vehicle_moving = (fr | rr | rl | fl) != 0U;
   }
 
-  if (msg_matches(msg, MSG_SUBARU_Brake_Status, alt_main_bus)) {
-    safety.brake_pressed = GET_BIT(msg, 62U);
-  }
+  if (safety_setup.subaru_hybrid) {
+    // CruiseControl is missing on hybrids, and Brake_Status and Throttle never show a driver press.
+    // enter controls on rising edge of ACC, exit controls on ACC off
+    if (msg_matches(msg, MSG_SUBARU_Cruise_Status_2, SUBARU_ALT_BUS)) {
+      bool cruise_engaged = GET_BIT(msg, 37U);
+      pcm_cruise_check(cruise_engaged);
+    }
 
-  if (msg_matches(msg, MSG_SUBARU_Throttle, SUBARU_MAIN_BUS)) {
-    safety.gas_pressed = msg->data[4] != 0U;
+    if (msg_matches(msg, MSG_SUBARU_Brake_Hybrid, SUBARU_ALT_BUS)) {
+      safety.brake_pressed = GET_BIT(msg, 37U);
+    }
+
+    if (msg_matches(msg, MSG_SUBARU_Throttle_Hybrid, SUBARU_ALT_BUS)) {
+      safety.gas_pressed = msg->data[4] != 0U;
+    }
+  } else {
+    // enter controls on rising edge of ACC, exit controls on ACC off
+    if (msg_matches(msg, MSG_SUBARU_CruiseControl, alt_main_bus)) {
+      bool cruise_engaged = GET_BIT(msg, 41U);
+      pcm_cruise_check(cruise_engaged);
+    }
+
+    if (msg_matches(msg, MSG_SUBARU_Brake_Status, alt_main_bus)) {
+      safety.brake_pressed = GET_BIT(msg, 62U);
+    }
+
+    if (msg_matches(msg, MSG_SUBARU_Throttle, SUBARU_MAIN_BUS)) {
+      safety.gas_pressed = msg->data[4] != 0U;
+    }
   }
 }
 
@@ -156,15 +186,27 @@ static safety_config subaru_init(uint16_t param) {
     SUBARU_COMMON_TX_MSGS(SUBARU_ALT_BUS)
   };
 
+  // hybrids have no ES_Distance, so there is no cancel message to allow
+  static const CanMsg SUBARU_HYBRID_TX_MSGS[] = {
+    SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
+  };
+
   const uint16_t SUBARU_PARAM_GEN2 = 1;
+  const uint16_t SUBARU_PARAM_HYBRID = 8;
 
   safety_setup.subaru_gen2 = GET_FLAG(param, SUBARU_PARAM_GEN2);
+  safety_setup.subaru_hybrid = GET_FLAG(param, SUBARU_PARAM_HYBRID);
 
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
 
   safety_config ret;
-  if (safety_setup.subaru_gen2) {
+  if (safety_setup.subaru_hybrid) {
+    static const RxCheck subaru_hybrid_rx_checks[] = {
+      SUBARU_HYBRID_RX_CHECKS
+    };
+    ret = BUILD_SAFETY_CFG(subaru_hybrid_rx_checks, SUBARU_HYBRID_TX_MSGS);
+  } else if (safety_setup.subaru_gen2) {
     static const RxCheck subaru_gen2_rx_checks[] = {
       SUBARU_COMMON_RX_CHECKS(SUBARU_ALT_BUS)
     };

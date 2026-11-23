@@ -117,6 +117,7 @@ class CarController(CarControllerBase):
                                                         self.CP.openpilotLongitudinalControl, cruise_brake > 0, cruise_throttle))
       else:
         if pcm_cancel_cmd:
+          # Hybrids have no ES_Distance to cancel with, the driver cancels ACC with the brake or the CRUISE switch
           if not (self.CP.flags & SubaruFlags.HYBRID):
             bus = CanBus.alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else CanBus.main
             can_sends.append(subarucan.create_es_distance(self.packer, CS.es_distance_msg["COUNTER"] + 1, CS.es_distance_msg, bus, pcm_cancel_cmd))

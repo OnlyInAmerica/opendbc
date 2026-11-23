@@ -14,11 +14,9 @@ class CarInterface(CarInterfaceBase):
   def _get_params(ret: structs.CarParams, candidate: CAR, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
     ret.brand = "subaru"
     ret.radarUnavailable = True
-    # for HYBRID CARS to be upstreamed, we need:
-    # - replacement for ES_Distance so we can cancel the cruise control
-    # - to find the Cruise_Activated bit from the car
-    # - proper panda safety setup (use the correct cruise_activated bit, throttle from Throttle_Hybrid, etc)
-    ret.dashcamOnly = bool(ret.flags & (SubaruFlags.PREGLOBAL | SubaruFlags.LKAS_ANGLE | SubaruFlags.HYBRID))
+    # Hybrids don't have ES_Distance and their cruise buttons aren't on CAN, so openpilot can't cancel the stock ACC.
+    # The Forester Hybrid stays in dashcam mode until its signals and safety are validated on a car
+    ret.dashcamOnly = bool(ret.flags & (SubaruFlags.PREGLOBAL | SubaruFlags.LKAS_ANGLE)) or candidate == CAR.SUBARU_FORESTER_HYBRID
     ret.autoResumeSng = False
 
     # Detect infotainment message sent from the camera
@@ -35,6 +33,8 @@ class CarInterface(CarInterfaceBase):
       ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.subaru)]
       if ret.flags & SubaruFlags.GLOBAL_GEN2:
         ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.GEN2.value
+      if ret.flags & SubaruFlags.HYBRID:
+        ret.safetyConfigs[0].safetyParam |= SubaruSafetyFlags.HYBRID.value
 
     ret.steerLimitTimer = 0.4
     ret.steerActuatorDelay = 0.1

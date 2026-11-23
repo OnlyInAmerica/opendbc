@@ -1,7 +1,9 @@
 CM_ "IMPORT _subaru_global.dbc";
 
 BO_ 39 Cruise_Status_2: 8 XXX
- SG_ Cruise_Activated : 37|1@0+ (1,0) [0|1] "" XXX
+ SG_ CHECKSUM : 0|8@1+ (1,0) [0|255] "" XXX
+ SG_ COUNTER : 8|4@1+ (1,0) [0|15] "" XXX
+ SG_ Cruise_Activated : 37|1@1+ (1,0) [0|1] "" XXX
 
 BO_ 295 Transmission: 8 XXX
  SG_ Gear : 44|4@1+ (1,0) [0|15] "" XXX
@@ -12,7 +14,11 @@ BO_ 360 Throttle_Hybrid: 8 XXX
  SG_ Throttle_Pedal : 32|8@1+ (1,0) [0|255] "" XXX
 
 BO_ 550 Brake_Hybrid: 8 XXX
- SG_ Brake_Pedal : 24|8@1+ (1,0) [0|1] "" XXX
+ SG_ Brake_Pedal : 24|8@1+ (1,0) [0|255] "" XXX
  SG_ Brake : 37|1@1+ (1,0) [0|1] "" XXX
 
-VAL_ 295 Gear 0 "P" 1 "R" 3 "D";
+CM_ BO_ 39 "EyeSight's ACC request to the hybrid system. All data bytes are zero unless ACC is engaged";
+CM_ SG_ 39 Cruise_Activated "Matches ES_Brake.Cruise_Activated. Stays set during driver gas override and ACC standstill hold";
+CM_ SG_ 550 Brake "Driver brake pedal only, stays zero while ACC is braking";
+CM_ SG_ 360 Throttle_Pedal "Driver accelerator pedal. Throttle.Throttle_Pedal on the main bus is always zero on hybrids";
+VAL_ 295 Gear 0 "P" 1 "R" 2 "N" 3 "D" 4 "B";

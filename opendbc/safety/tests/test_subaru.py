@@ -5,6 +5,7 @@ import unittest
 from opendbc.car.subaru.values import SubaruSafetyFlags
 from opendbc.car.structs import CarParams
 import opendbc.safety.tests.common as common
+from opendbc.safety.tests.common import CANPackerSafety
 from functools import partial
 
 
@@ -14,6 +15,9 @@ class SubaruMsg(enum.IntEnum):
   Throttle          = 0x40
   Steering_Torque   = 0x119
   Wheel_Speeds      = 0x13a
+  Cruise_Status_2   = 0x27
+  Throttle_Hybrid   = 0x168
+  Brake_Hybrid      = 0x226
   ES_LKAS           = 0x122
   ES_Distance       = 0x221
   ES_DashStatus     = 0x321
@@ -104,6 +108,59 @@ class TestSubaruTorqueSafetyBase(TestSubaruSafetyBase, common.DriverTorqueSteeri
 
 class TestSubaruGen1TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSafetyBase, TestSubaruTorqueSafetyBase):
   TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS)
+
+
+class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
+  # Hybrids report driver gas, driver brake and the ACC state on the alt bus.
+  # There is no ES_Distance, so no cancel message is allowed
+  DBC = "subaru_global_2020_hybrid_generated"
+  SAFETY_PARAM = SubaruSafetyFlags.HYBRID
+
+  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance]
+
+  def _user_brake_msg(self, brake):
+    values = {"Brake": brake}
+    return self.packer.make_can_msg_safety("Brake_Hybrid", SUBARU_ALT_BUS, values)
+
+  def _user_gas_msg(self, gas):
+    values = {"Throttle_Pedal": gas}
+    return self.packer.make_can_msg_safety("Throttle_Hybrid", SUBARU_ALT_BUS, values)
+
+  def _pcm_status_msg(self, enable):
+    values = {"Cruise_Activated": enable}
+    return self.packer.make_can_msg_safety("Cruise_Status_2", SUBARU_ALT_BUS, values)
+
+  def setUp(self):
+    super().setUp()
+    self.global_packer = CANPackerSafety("subaru_global_2017_generated")
+
+  def _state(self):
+    return self.safety.get_brake_pressed_prev(), self.safety.get_gas_pressed_prev(), self.safety.get_cruise_engaged_prev()
+
+  def test_non_hybrid_signals_ignored(self):
+    # Brake_Status and Throttle are also on the main bus of hybrids, but never show a driver press there
+    for pressed in (True, False):
+      self._rx(self._user_brake_msg(pressed))
+      self._rx(self._user_gas_msg(pressed))
+      self._rx(self._pcm_status_msg(pressed))
+      for bus in (SUBARU_MAIN_BUS, SUBARU_ALT_BUS):
+        self._rx(self.global_packer.make_can_msg_safety("Brake_Status", bus, {"Brake": not pressed}))
+        self._rx(self.global_packer.make_can_msg_safety("Throttle", bus, {"Throttle_Pedal": not pressed}))
+        self._rx(self.global_packer.make_can_msg_safety("CruiseControl", bus, {"Cruise_Activated": not pressed}))
+        self.assertEqual((pressed, pressed, pressed), self._state())
+
+  def test_hybrid_signals_bus(self):
+    # the hybrid powertrain messages are only read from the alt bus
+    for bus in (SUBARU_MAIN_BUS, SUBARU_CAM_BUS):
+      self._rx(self.packer.make_can_msg_safety("Brake_Hybrid", bus, {"Brake": 1}))
+      self._rx(self.packer.make_can_msg_safety("Throttle_Hybrid", bus, {"Throttle_Pedal": 1}))
+      self._rx(self.packer.make_can_msg_safety("Cruise_Status_2", bus, {"Cruise_Activated": 1}))
+      self.assertEqual((False, False, False), self._state())
+
+  def test_cancel_message_blocked(self):
+    values = {"Cruise_Cancel": 1, "Cruise_Throttle": self.INACTIVE_GAS}
+    for bus in (SUBARU_MAIN_BUS, SUBARU_ALT_BUS, SUBARU_CAM_BUS):
+      self.assertFalse(self._tx(self.global_packer.make_can_msg_safety("ES_Distance", bus, values)))
 
 
 class TestSubaruGen2TorqueSafetyBase(TestSubaruTorqueSafetyBase):
