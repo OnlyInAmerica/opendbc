@@ -8,6 +8,13 @@ BO_ 39 Cruise_Status_2: 8 XXX
 BO_ 295 Transmission: 8 XXX
  SG_ Gear : 44|4@1+ (1,0) [0|15] "" XXX
 
+BO_ 327 Brake_Switch: 3 XXX
+ SG_ CHECKSUM : 0|8@1+ (1,0) [0|255] "" XXX
+ SG_ COUNTER : 8|4@1+ (1,0) [0|15] "" XXX
+ SG_ Brake_Late : 12|1@1+ (1,0) [0|1] "" XXX
+ SG_ Brake : 13|1@1+ (1,0) [0|1] "" XXX
+ SG_ Signal1 : 14|10@1+ (1,0) [0|1023] "" XXX
+
 BO_ 360 Throttle_Hybrid: 8 XXX
  SG_ CHECKSUM : 0|8@1+ (1,0) [0|255] "" XXX
  SG_ COUNTER : 8|4@1+ (1,0) [0|15] "" XXX
@@ -20,6 +27,9 @@ BO_ 550 Brake_Hybrid: 8 XXX
 
 CM_ BO_ 39 "EyeSight's ACC request to the hybrid system. All data bytes are zero unless ACC is engaged";
 CM_ SG_ 39 Cruise_Activated "Matches ES_Brake.Cruise_Activated. Stays set during driver gas override and ACC standstill hold";
+CM_ BO_ 327 "DEBUG (brake bit cancel experiment). Main bus, 50 Hz, on the same clock as Throttle and Cruise_Buttons";
+CM_ SG_ 327 Brake "Driver brake, set a median 80 ms after Throttle_Hybrid.Brake. Stays zero while ACC is braking";
+CM_ SG_ 327 Brake_Late "Driver brake, set a median 220 ms after Throttle_Hybrid.Brake";
 CM_ SG_ 550 Brake "Driver brake pedal only, stays zero while ACC is braking";
 CM_ SG_ 360 Brake "Driver brake pedal switch, 0 or 3. Set before Brake_Hybrid.Brake, stays zero while ACC is braking. The stock ACC disengages right after it is set";
 CM_ SG_ 360 Throttle_Pedal "Driver accelerator pedal. Throttle.Throttle_Pedal on the main bus is always zero on hybrids";

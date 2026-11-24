@@ -15,6 +15,10 @@ class CarState(CarStateBase):
 
     self.angle_rate_calulator = CanSignalRateCalculator(50)
 
+    # DEBUG (brake bit cancel experiment)
+    self.brake_switch_seen = False
+    self.body_info_seen = False
+
   def update(self, can_parsers) -> structs.CarState:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
@@ -130,6 +134,15 @@ class CarState(CarStateBase):
 
       self.es_lkas_state_msg = copy.copy(cp_cam.vl["ES_LKAS_State"])
       self.es_brake_msg = copy.copy(cp_es_brake.vl["ES_Brake"])
+      if self.CP.flags & SubaruFlags.HYBRID:
+        # DEBUG (brake bit cancel experiment): the car's two main bus brake messages are replaced on their way to the camera
+        self.brake_switch_msg = copy.copy(cp.vl["Brake_Switch"])
+        self.body_info_msg = copy.copy(cp.vl["BodyInfo"])
+        # nothing is resent until the car's first frame of each has been seen
+        self.brake_switch_seen = self.brake_switch_seen or len(cp.vl_all["Brake_Switch"]["COUNTER"]) > 0
+        self.body_info_seen = self.body_info_seen or len(cp.vl_all["BodyInfo"]["COUNTER"]) > 0
+        # DEBUG trial trigger: both blinker lamps lit at once, which only the hazard lights do
+        self.hazard_lamps = cp.vl["Dashlights"]["LEFT_BLINKER"] == 1 and cp.vl["Dashlights"]["RIGHT_BLINKER"] == 1
 
       # 8 is known AEB, there are a few other values related to AEB we ignore
       ret.stockAeb = (cp_es_brake.vl["ES_Brake"]["AEB_Status"] == 8) and \

@@ -20,6 +20,9 @@ class CarController(CarControllerBase):
     self.cruise_button_prev = 0
     self.steer_rate_counter = 0
 
+    self.brake_switch_counter_prev = -1
+    self.body_info_counter_prev = -1
+
     self.p = CarControllerParams(CP)
     self.packer = CANPacker(DBC[CP.carFingerprint][Bus.pt])
 
@@ -105,6 +108,24 @@ class CarController(CarControllerBase):
         if self.CP.flags & SubaruFlags.SEND_INFOTAINMENT:
           can_sends.append(subarucan.create_es_infotainment(self.packer, self.frame // 10, CS.es_infotainment_msg, hud_control.visualAlert))
 
+      if self.CP.flags & SubaruFlags.HYBRID:
+        # DEBUG (brake bit cancel experiment): panda blocks the car's Brake_Switch and BodyInfo from reaching the camera,
+        # so every frame has to be resent. While openpilot wants ACC cancelled, the camera is told the driver is braking
+        # in both, which EyeSight lists as a cancel reason. No other module sees the changed frames.
+        # Trial trigger: nothing the driver can do makes openpilot disengage without also cancelling ACC,
+        # so the hazard lights with ACC engaged set the brake bits too (each time the lamps are lit, about 0.5 s)
+        fake_brake = pcm_cancel_cmd or (CS.hazard_lamps and CS.out.cruiseState.enabled)
+
+        counter = CS.brake_switch_msg["COUNTER"]
+        if CS.brake_switch_seen and counter != self.brake_switch_counter_prev:
+          self.brake_switch_counter_prev = counter
+          can_sends.append(subarucan.create_brake_switch(self.packer, CS.brake_switch_msg, fake_brake))
+
+        counter = CS.body_info_msg["COUNTER"]
+        if CS.body_info_seen and counter != self.body_info_counter_prev:
+          self.body_info_counter_prev = counter
+          can_sends.append(subarucan.create_body_info(self.packer, CS.body_info_msg, fake_brake))
+
       if self.CP.openpilotLongitudinalControl:
         if self.frame % 5 == 0:
           can_sends.append(subarucan.create_es_status(self.packer, self.frame // 5, CS.es_status_msg,
@@ -117,7 +138,7 @@ class CarController(CarControllerBase):
                                                         self.CP.openpilotLongitudinalControl, cruise_brake > 0, cruise_throttle))
       else:
         if pcm_cancel_cmd:
-          # Hybrids have no ES_Distance to cancel with, the driver cancels ACC with the brake or the CRUISE switch
+          # Hybrids have no ES_Distance to cancel with. DEBUG: see the brake bit cancel experiment above
           if not (self.CP.flags & SubaruFlags.HYBRID):
             bus = CanBus.alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else CanBus.main
             can_sends.append(subarucan.create_es_distance(self.packer, CS.es_distance_msg["COUNTER"] + 1, CS.es_distance_msg, bus, pcm_cancel_cmd))

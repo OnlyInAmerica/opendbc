@@ -24,6 +24,8 @@ class SubaruMsg(enum.IntEnum):
   ES_DashStatus     = 0x321
   ES_LKAS_State     = 0x322
   ES_Infotainment   = 0x323
+  Brake_Switch      = 0x147
+  BodyInfo          = 0x3ac
 
 
 SUBARU_MAIN_BUS = 0
@@ -124,7 +126,13 @@ class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
   DBC = "subaru_global_2020_hybrid_generated"
   SAFETY_PARAM = SubaruSafetyFlags.HYBRID
 
-  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance]
+  # DEBUG (brake bit cancel experiment): Brake_Switch and BodyInfo are blocked from the camera and resent by openpilot
+  DEBUG_CAM_MSGS = (SubaruMsg.Brake_Switch, SubaruMsg.BodyInfo)
+  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance] + [[m, SUBARU_CAM_BUS] for m in DEBUG_CAM_MSGS]
+  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
+                                               SubaruMsg.ES_Infotainment),
+                             SUBARU_CAM_BUS: DEBUG_CAM_MSGS}
+  FWD_BLACKLISTED_ADDRS = {SUBARU_CAM_BUS: fwd_blacklisted_addr()[SUBARU_CAM_BUS], SUBARU_MAIN_BUS: list(DEBUG_CAM_MSGS)}
 
   def _user_brake_msg(self, brake):
     self._brake = brake
