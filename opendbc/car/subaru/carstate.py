@@ -16,7 +16,6 @@ class CarState(CarStateBase):
     self.angle_rate_calulator = CanSignalRateCalculator(50)
 
     self.brake_switch_seen = False
-    self.body_info_seen = False
 
   def update(self, can_parsers) -> structs.CarState:
     cp = can_parsers[Bus.pt]
@@ -134,12 +133,10 @@ class CarState(CarStateBase):
       self.es_lkas_state_msg = copy.copy(cp_cam.vl["ES_LKAS_State"])
       self.es_brake_msg = copy.copy(cp_es_brake.vl["ES_Brake"])
       if self.CP.flags & SubaruFlags.HYBRID:
-        # the car's two main bus brake messages are resent to the camera, see the ACC cancel in carcontroller
+        # the car's Brake_Switch is resent to the camera, see the ACC cancel in carcontroller
         self.brake_switch_msg = copy.copy(cp.vl["Brake_Switch"])
-        self.body_info_msg = copy.copy(cp.vl["BodyInfo"])
-        # nothing is resent until the car's first frame of each has been seen
+        # nothing is resent until the car's first frame has been seen
         self.brake_switch_seen = self.brake_switch_seen or len(cp.vl_all["Brake_Switch"]["COUNTER"]) > 0
-        self.body_info_seen = self.body_info_seen or len(cp.vl_all["BodyInfo"]["COUNTER"]) > 0
 
       # 8 is known AEB, there are a few other values related to AEB we ignore
       ret.stockAeb = (cp_es_brake.vl["ES_Brake"]["AEB_Status"] == 8) and \

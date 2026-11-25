@@ -21,7 +21,6 @@ class CarController(CarControllerBase):
     self.steer_rate_counter = 0
 
     self.brake_switch_counter_prev = -1
-    self.body_info_counter_prev = -1
 
     self.p = CarControllerParams(CP)
     self.packer = CANPacker(DBC[CP.carFingerprint][Bus.pt])
@@ -109,19 +108,14 @@ class CarController(CarControllerBase):
           can_sends.append(subarucan.create_es_infotainment(self.packer, self.frame // 10, CS.es_infotainment_msg, hud_control.visualAlert))
 
       if self.CP.flags & SubaruFlags.HYBRID:
-        # Hybrids have no ES_Distance to cancel ACC with. Panda blocks the car's Brake_Switch and BodyInfo from reaching
-        # the camera and every frame is resent here. While openpilot wants ACC cancelled, the driver brake bit is set
-        # in both, and EyeSight cancels as it does for a brake press. No other module sees the changed frames
+        # Hybrids have no ES_Distance to cancel ACC with. Panda blocks the car's Brake_Switch from reaching the camera
+        # and every frame is resent here. While openpilot wants ACC cancelled, the driver brake bit is set in it,
+        # and EyeSight cancels as it does for a brake press. No other module sees the changed frames
 
         counter = CS.brake_switch_msg["COUNTER"]
         if CS.brake_switch_seen and counter != self.brake_switch_counter_prev:
           self.brake_switch_counter_prev = counter
           can_sends.append(subarucan.create_brake_switch(self.packer, CS.brake_switch_msg, pcm_cancel_cmd))
-
-        counter = CS.body_info_msg["COUNTER"]
-        if CS.body_info_seen and counter != self.body_info_counter_prev:
-          self.body_info_counter_prev = counter
-          can_sends.append(subarucan.create_body_info(self.packer, CS.body_info_msg, pcm_cancel_cmd))
 
       if self.CP.openpilotLongitudinalControl:
         if self.frame % 5 == 0:
@@ -135,7 +129,7 @@ class CarController(CarControllerBase):
                                                         self.CP.openpilotLongitudinalControl, cruise_brake > 0, cruise_throttle))
       else:
         if pcm_cancel_cmd:
-          # Hybrids have no ES_Distance, they cancel with the brake bits sent to the camera above
+          # Hybrids have no ES_Distance, they cancel with the brake bit sent to the camera above
           if not (self.CP.flags & SubaruFlags.HYBRID):
             bus = CanBus.alt if self.CP.flags & SubaruFlags.GLOBAL_GEN2 else CanBus.main
             can_sends.append(subarucan.create_es_distance(self.packer, CS.es_distance_msg["COUNTER"] + 1, CS.es_distance_msg, bus, pcm_cancel_cmd))

@@ -27,7 +27,7 @@ BO_ 550 Brake_Hybrid: 8 XXX
 
 CM_ BO_ 39 "EyeSight's ACC request to the hybrid system. All data bytes are zero unless ACC is engaged";
 CM_ SG_ 39 Cruise_Activated "Matches ES_Brake.Cruise_Activated. Stays set during driver gas override and ACC standstill hold";
-CM_ BO_ 327 "Main bus, 50 Hz. EyeSight cancels ACC when Brake is set here and in BodyInfo";
+CM_ BO_ 327 "Main bus, 50 Hz. EyeSight cancels ACC when Brake is set";
 CM_ SG_ 327 Brake "Driver brake, set a median 80 ms after Throttle_Hybrid.Brake. Stays zero while ACC is braking";
 CM_ SG_ 327 Brake_Late "Driver brake, set a median 220 ms after Throttle_Hybrid.Brake";
 CM_ SG_ 550 Brake "Driver brake pedal only, stays zero while ACC is braking";
