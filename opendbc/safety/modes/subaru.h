@@ -173,6 +173,8 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
 static bool subaru_tx_hook(const CANPacket_t *msg) {
   const TorqueSteeringLimits SUBARU_STEERING_LIMITS      = SUBARU_STEERING_LIMITS_GENERATOR(2047, 50, 70);
   const TorqueSteeringLimits SUBARU_GEN2_STEERING_LIMITS = SUBARU_STEERING_LIMITS_GENERATOR(1000, 40, 40);
+  // the hybrid EPS outputs about 0.4 of the command, half of other global cars. It faults just above 3200
+  const TorqueSteeringLimits SUBARU_HYBRID_STEERING_LIMITS = SUBARU_STEERING_LIMITS_GENERATOR(3200, 50, 70);
 
   const LongitudinalLimits SUBARU_LONG_LIMITS = {
     .min_gas = 808,       // appears to be engine braking
@@ -193,8 +195,12 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
 
     bool steer_req = GET_BIT(msg, 29U);
 
-    const TorqueSteeringLimits limits = safety_setup.subaru_gen2 ? SUBARU_GEN2_STEERING_LIMITS : SUBARU_STEERING_LIMITS;
-    violation = steer_torque_cmd_checks(desired_torque, steer_req, limits);
+    if (safety_setup.subaru_hybrid) {
+      violation = steer_torque_cmd_checks(desired_torque, steer_req, SUBARU_HYBRID_STEERING_LIMITS);
+    } else {
+      const TorqueSteeringLimits limits = safety_setup.subaru_gen2 ? SUBARU_GEN2_STEERING_LIMITS : SUBARU_STEERING_LIMITS;
+      violation = steer_torque_cmd_checks(desired_torque, steer_req, limits);
+    }
   }
 
   // check es_distance cruise_throttle limits

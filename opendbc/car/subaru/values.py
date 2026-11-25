@@ -26,6 +26,9 @@ class CarControllerParams:
     elif CP.carFingerprint == CAR.SUBARU_IMPREZA_2020:
       self.STEER_DELTA_UP = 35
       self.STEER_MAX = 1439
+    elif CP.carFingerprint == CAR.SUBARU_CROSSTREK_HYBRID:
+      # this EPS outputs about 0.4 of the command, half of other global cars. It faults just above 3200
+      self.STEER_MAX = 3200
     else:
       self.STEER_MAX = 2047
 
