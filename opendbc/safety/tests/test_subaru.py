@@ -125,6 +125,7 @@ class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
   # There is no ES_Distance, ACC is cancelled through the brake bits sent to the camera
   DBC = "subaru_global_2020_hybrid_generated"
   SAFETY_PARAM = SubaruSafetyFlags.HYBRID
+  MAX_TORQUE_LOOKUP = [0], [3200]
 
   # Brake_Switch and BodyInfo are blocked from the camera and resent by openpilot, with the brake bit set to cancel ACC
   HYBRID_CAM_MSGS = (SubaruMsg.Brake_Switch, SubaruMsg.BodyInfo)
