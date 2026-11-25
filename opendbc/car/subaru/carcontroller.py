@@ -112,10 +112,13 @@ class CarController(CarControllerBase):
         # and every frame is resent here. While openpilot wants ACC cancelled, the driver brake bit is set in it,
         # and EyeSight cancels as it does for a brake press. No other module sees the changed frames
 
+        # DEBUG trial trigger: the hazard lights with ACC engaged also set the brake bit (while the lamps are lit)
+        fake_brake = pcm_cancel_cmd or (CS.hazard_lamps and CS.out.cruiseState.enabled)
+
         counter = CS.brake_switch_msg["COUNTER"]
         if CS.brake_switch_seen and counter != self.brake_switch_counter_prev:
           self.brake_switch_counter_prev = counter
-          can_sends.append(subarucan.create_brake_switch(self.packer, CS.brake_switch_msg, pcm_cancel_cmd))
+          can_sends.append(subarucan.create_brake_switch(self.packer, CS.brake_switch_msg, fake_brake))
 
       if self.CP.openpilotLongitudinalControl:
         if self.frame % 5 == 0:

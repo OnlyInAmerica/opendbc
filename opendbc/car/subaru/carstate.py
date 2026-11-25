@@ -137,6 +137,8 @@ class CarState(CarStateBase):
         self.brake_switch_msg = copy.copy(cp.vl["Brake_Switch"])
         # nothing is resent until the car's first frame has been seen
         self.brake_switch_seen = self.brake_switch_seen or len(cp.vl_all["Brake_Switch"]["COUNTER"]) > 0
+        # DEBUG trial trigger: both blinker lamps lit at once, which only the hazard lights do
+        self.hazard_lamps = cp.vl["Dashlights"]["LEFT_BLINKER"] == 1 and cp.vl["Dashlights"]["RIGHT_BLINKER"] == 1
 
       # 8 is known AEB, there are a few other values related to AEB we ignore
       ret.stockAeb = (cp_es_brake.vl["ES_Brake"]["AEB_Status"] == 8) and \
