@@ -210,5 +210,30 @@ class TestSubaruGen2TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSaf
   TX_MSGS = lkas_tx_msgs(SUBARU_ALT_BUS)
 
 
+# DEBUG: steering limit steps for the hybrid, selected by two bits of the safety param
+class TestSubaruGen1HybridSteerStep1TorqueSafety(TestSubaruGen1HybridTorqueSafety):
+  SAFETY_PARAM = SubaruSafetyFlags.HYBRID | SubaruSafetyFlags.HYBRID_STEER_STEP_1
+  MAX_TORQUE_LOOKUP = [0], [2600]
+  MAX_RATE_UP = 64
+  MAX_RATE_DOWN = 89
+  MAX_RT_DELTA = 1194
+
+
+class TestSubaruGen1HybridSteerStep2TorqueSafety(TestSubaruGen1HybridTorqueSafety):
+  SAFETY_PARAM = SubaruSafetyFlags.HYBRID | SubaruSafetyFlags.HYBRID_STEER_STEP_2
+  MAX_TORQUE_LOOKUP = [0], [3200]
+  MAX_RATE_UP = 78
+  MAX_RATE_DOWN = 109
+  MAX_RT_DELTA = 1469
+
+
+class TestSubaruGen1HybridSteerStep3TorqueSafety(TestSubaruGen1HybridTorqueSafety):
+  SAFETY_PARAM = SubaruSafetyFlags.HYBRID | SubaruSafetyFlags.HYBRID_STEER_STEP_1 | SubaruSafetyFlags.HYBRID_STEER_STEP_2
+  MAX_TORQUE_LOOKUP = [0], [4095]
+  MAX_RATE_UP = 100
+  MAX_RATE_DOWN = 140
+  MAX_RT_DELTA = 1880
+
+
 if __name__ == "__main__":
   unittest.main()

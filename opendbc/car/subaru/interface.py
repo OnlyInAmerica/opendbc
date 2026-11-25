@@ -3,7 +3,8 @@ from opendbc.car.disable_ecu import disable_ecu
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.subaru.carcontroller import CarController
 from opendbc.car.subaru.carstate import CarState
-from opendbc.car.subaru.values import CAR, GLOBAL_ES_ADDR, SubaruFlags, SubaruSafetyFlags
+from opendbc.car.subaru.values import CAR, GLOBAL_ES_ADDR, HYBRID_STEER_STEPS, HYBRID_STEER_STEP_SHIFT, SubaruFlags, SubaruSafetyFlags, \
+                                      read_hybrid_steer_step
 
 
 class CarInterface(CarInterfaceBase):
@@ -66,6 +67,13 @@ class CarInterface(CarInterfaceBase):
 
     elif candidate == CAR.SUBARU_CROSSTREK_HYBRID:
       ret.steerActuatorDelay = 0.1
+
+      # DEBUG: stepped steering limit. The torque tune is scaled as if the EPS were linear in the command,
+      # which also gives each step its own learned torque parameters
+      step = read_hybrid_steer_step()
+      ret.safetyConfigs[0].safetyParam |= step << HYBRID_STEER_STEP_SHIFT
+      scale = HYBRID_STEER_STEPS[step][0] / HYBRID_STEER_STEPS[0][0]
+      ret.lateralTuning.torque.latAccelFactor *= scale
 
     elif candidate in (CAR.SUBARU_FORESTER, CAR.SUBARU_FORESTER_HYBRID):
       ret.lateralTuning.init('pid')

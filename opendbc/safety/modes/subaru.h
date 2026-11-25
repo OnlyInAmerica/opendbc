@@ -3,10 +3,13 @@
 
 #include "opendbc/safety/declarations.h"
 
-#define SUBARU_STEERING_LIMITS_GENERATOR(steer_max, rate_up, rate_down)               \
+#define SUBARU_STEERING_LIMITS_GENERATOR(steer_max, rate_up, rate_down) \
+  SUBARU_STEERING_LIMITS_GENERATOR_RT(steer_max, rate_up, rate_down, 940)
+
+#define SUBARU_STEERING_LIMITS_GENERATOR_RT(steer_max, rate_up, rate_down, rt_delta)  \
   {                                                                                   \
     .max_torque = (steer_max),                                                        \
-    .max_rt_delta = 940,                                                              \
+    .max_rt_delta = (rt_delta),                                                       \
     .max_rate_up = (rate_up),                                                         \
     .max_rate_down = (rate_down),                                                     \
     .driver_torque_multiplier = 50,                                                   \
@@ -133,6 +136,15 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
   const TorqueSteeringLimits SUBARU_STEERING_LIMITS      = SUBARU_STEERING_LIMITS_GENERATOR(2047, 50, 70);
   const TorqueSteeringLimits SUBARU_GEN2_STEERING_LIMITS = SUBARU_STEERING_LIMITS_GENERATOR(1000, 40, 40);
 
+  // DEBUG: steering limit steps for the hybrid, selected by two bits of the safety param.
+  // The ramp and the real time limit scale with the max, step 0 is the default limit
+  const TorqueSteeringLimits SUBARU_HYBRID_STEERING_LIMITS[4] = {
+    SUBARU_STEERING_LIMITS_GENERATOR_RT(2047, 50, 70, 940),
+    SUBARU_STEERING_LIMITS_GENERATOR_RT(2600, 64, 89, 1194),
+    SUBARU_STEERING_LIMITS_GENERATOR_RT(3200, 78, 109, 1469),
+    SUBARU_STEERING_LIMITS_GENERATOR_RT(4095, 100, 140, 1880),
+  };
+
   const LongitudinalLimits SUBARU_LONG_LIMITS = {
     .min_gas = 808,       // appears to be engine braking
     .max_gas = 3400,      // approx  2 m/s^2 when maxing cruise_rpm and cruise_throttle
@@ -152,8 +164,12 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
 
     bool steer_req = GET_BIT(msg, 29U);
 
-    const TorqueSteeringLimits limits = safety_setup.subaru_gen2 ? SUBARU_GEN2_STEERING_LIMITS : SUBARU_STEERING_LIMITS;
-    violation = steer_torque_cmd_checks(desired_torque, steer_req, limits);
+    if (safety_setup.subaru_hybrid) {
+      violation = steer_torque_cmd_checks(desired_torque, steer_req, SUBARU_HYBRID_STEERING_LIMITS[safety_setup.subaru_hybrid_steer_step]);
+    } else {
+      const TorqueSteeringLimits limits = safety_setup.subaru_gen2 ? SUBARU_GEN2_STEERING_LIMITS : SUBARU_STEERING_LIMITS;
+      violation = steer_torque_cmd_checks(desired_torque, steer_req, limits);
+    }
   }
 
   // check es_distance cruise_throttle limits
@@ -197,6 +213,7 @@ static safety_config subaru_init(uint16_t param) {
 
   safety_setup.subaru_gen2 = GET_FLAG(param, SUBARU_PARAM_GEN2);
   safety_setup.subaru_hybrid = GET_FLAG(param, SUBARU_PARAM_HYBRID);
+  safety_setup.subaru_hybrid_steer_step = (uint8_t)((param >> 4U) & 0x3U);  // DEBUG
 
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
