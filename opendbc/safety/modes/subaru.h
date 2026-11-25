@@ -35,9 +35,18 @@
 #define MSG_SUBARU_ES_DashStatus         0x321U
 #define MSG_SUBARU_ES_LKAS_State         0x322U
 #define MSG_SUBARU_ES_Infotainment       0x323U
+#define MSG_SUBARU_Brake_Switch          0x147U
+#define MSG_SUBARU_BodyInfo              0x3acU
+
+// the driver brake bit in the two messages hybrids resend to the camera
+#define SUBARU_BRAKE_SWITCH_BRAKE_BYTE   1U
+#define SUBARU_BRAKE_SWITCH_BRAKE_MASK   0x20U
+#define SUBARU_BODY_INFO_BRAKE_BYTE      6U
+#define SUBARU_BODY_INFO_BRAKE_MASK      0x40U
 
 #define SUBARU_MAIN_BUS 0U
 #define SUBARU_ALT_BUS  1U
+#define SUBARU_CAM_BUS  2U
 
 #define SUBARU_BASE_TX_MSGS(alt_bus, lkas_msg) \
   {(lkas_msg),                   SUBARU_MAIN_BUS, 8, .check_relay = true},  \
@@ -55,12 +64,15 @@
   {.msg = {{MSG_SUBARU_Brake_Status,    (alt_bus),       8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
   {.msg = {{MSG_SUBARU_CruiseControl,   (alt_bus),       8, 20U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},  \
 
-// Hybrids report driver gas, driver brake and the ACC state on the alt bus instead
+// Hybrids report driver gas, driver brake and the ACC state on the alt bus instead.
+// Brake_Switch and BodyInfo are the car's frames that openpilot resends to the camera
 #define SUBARU_HYBRID_RX_CHECKS                                                                                                                             \
   {.msg = {{MSG_SUBARU_Throttle_Hybrid, SUBARU_ALT_BUS,  8, 40U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
   {.msg = {{MSG_SUBARU_Steering_Torque, SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
   {.msg = {{MSG_SUBARU_Wheel_Speeds,    SUBARU_MAIN_BUS, 8, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
   {.msg = {{MSG_SUBARU_Cruise_Status_2, SUBARU_ALT_BUS,  8, 100U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                         \
+  {.msg = {{MSG_SUBARU_Brake_Switch,    SUBARU_MAIN_BUS, 3, 50U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
+  {.msg = {{MSG_SUBARU_BodyInfo,        SUBARU_MAIN_BUS, 8, 10U, .max_counter = 15U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                          \
 
 static uint32_t subaru_get_checksum(const CANPacket_t *msg) {
   return (uint8_t)msg->data[0];
@@ -77,6 +89,30 @@ static uint32_t subaru_compute_checksum(const CANPacket_t *msg) {
     checksum += (uint8_t)msg->data[i];
   }
   return checksum;
+}
+
+static void subaru_hybrid_store_stock(const CANPacket_t *msg, uint8_t *stock, bool *seen) {
+  uint32_t len = GET_LEN(msg);
+  for (uint32_t i = 0U; i < len; i++) {
+    stock[i] = msg->data[i];
+  }
+  *seen = true;
+}
+
+// Hybrids resend the car's Brake_Switch and BodyInfo to the camera. A resent frame must be the car's latest frame,
+// and the only change allowed is setting the driver brake bit, which cancels ACC. The bit can never be cleared
+static bool subaru_hybrid_resend_violation(const CANPacket_t *msg, const uint8_t *stock, bool seen, uint32_t brake_byte, uint8_t brake_mask) {
+  bool violation = !seen || (subaru_get_checksum(msg) != subaru_compute_checksum(msg));
+
+  uint32_t len = GET_LEN(msg);
+  for (uint32_t i = 1U; i < len; i++) {
+    uint8_t allowed_set = (i == brake_byte) ? brake_mask : 0U;
+    if ((msg->data[i] != stock[i]) && (msg->data[i] != (stock[i] | allowed_set))) {
+      violation = true;
+    }
+  }
+
+  return violation;
 }
 
 static void subaru_rx_hook(const CANPacket_t *msg) {
@@ -108,6 +144,14 @@ static void subaru_rx_hook(const CANPacket_t *msg) {
     if (msg_matches(msg, MSG_SUBARU_Throttle_Hybrid, SUBARU_ALT_BUS)) {
       safety.brake_pressed = ((msg->data[1] >> 4) & 0x3U) != 0U;
       safety.gas_pressed = msg->data[4] != 0U;
+    }
+
+    if (msg_matches(msg, MSG_SUBARU_Brake_Switch, SUBARU_MAIN_BUS)) {
+      subaru_hybrid_store_stock(msg, safety.subaru_brake_switch, &safety.subaru_brake_switch_seen);
+    }
+
+    if (msg_matches(msg, MSG_SUBARU_BodyInfo, SUBARU_MAIN_BUS)) {
+      subaru_hybrid_store_stock(msg, safety.subaru_body_info, &safety.subaru_body_info_seen);
     }
   } else {
     // enter controls on rising edge of ACC, exit controls on ACC off
@@ -163,6 +207,17 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
     violation = (cruise_throttle != (uint32_t)SUBARU_LONG_LIMITS.inactive_gas) || !cruise_cancel;
   }
 
+  // hybrids only, see subaru_hybrid_resend_violation
+  if (msg->addr == MSG_SUBARU_Brake_Switch) {
+    violation = subaru_hybrid_resend_violation(msg, safety.subaru_brake_switch, safety.subaru_brake_switch_seen,
+                                               SUBARU_BRAKE_SWITCH_BRAKE_BYTE, SUBARU_BRAKE_SWITCH_BRAKE_MASK);
+  }
+
+  if (msg->addr == MSG_SUBARU_BodyInfo) {
+    violation = subaru_hybrid_resend_violation(msg, safety.subaru_body_info, safety.subaru_body_info_seen,
+                                               SUBARU_BODY_INFO_BRAKE_BYTE, SUBARU_BODY_INFO_BRAKE_MASK);
+  }
+
   if (violation) {
     tx = false;
   }
@@ -181,9 +236,12 @@ static safety_config subaru_init(uint16_t param) {
     SUBARU_COMMON_TX_MSGS(SUBARU_ALT_BUS)
   };
 
-  // hybrids have no ES_Distance, so there is no cancel message to allow
+  // hybrids have no ES_Distance. ACC is cancelled with the driver brake bit in the car's two main bus brake messages,
+  // which are blocked from the camera and resent by openpilot. The TX hook only allows that bit to change
   static const CanMsg SUBARU_HYBRID_TX_MSGS[] = {
     SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
+    {MSG_SUBARU_Brake_Switch, SUBARU_CAM_BUS, 3, .check_relay = true},
+    {MSG_SUBARU_BodyInfo,     SUBARU_CAM_BUS, 8, .check_relay = true},
   };
 
   const uint16_t SUBARU_PARAM_GEN2 = 1;

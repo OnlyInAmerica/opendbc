@@ -23,6 +23,8 @@ class SubaruMsg(enum.IntEnum):
   ES_DashStatus     = 0x321
   ES_LKAS_State     = 0x322
   ES_Infotainment   = 0x323
+  Brake_Switch      = 0x147
+  BodyInfo          = 0x3ac
 
 
 SUBARU_MAIN_BUS = 0
@@ -112,11 +114,17 @@ class TestSubaruGen1TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSaf
 
 class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
   # Hybrids report driver gas, driver brake and the ACC state on the alt bus.
-  # There is no ES_Distance, so no cancel message is allowed
+  # There is no ES_Distance, ACC is cancelled through the brake bits sent to the camera
   DBC = "subaru_global_2020_hybrid_generated"
   SAFETY_PARAM = SubaruSafetyFlags.HYBRID
 
-  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance]
+  # Brake_Switch and BodyInfo are blocked from the camera and resent by openpilot, with the brake bit set to cancel ACC
+  HYBRID_CAM_MSGS = (SubaruMsg.Brake_Switch, SubaruMsg.BodyInfo)
+  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance] + [[m, SUBARU_CAM_BUS] for m in HYBRID_CAM_MSGS]
+  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
+                                               SubaruMsg.ES_Infotainment),
+                             SUBARU_CAM_BUS: HYBRID_CAM_MSGS}
+  FWD_BLACKLISTED_ADDRS = {SUBARU_CAM_BUS: fwd_blacklisted_addr()[SUBARU_CAM_BUS], SUBARU_MAIN_BUS: list(HYBRID_CAM_MSGS)}
 
   def _user_brake_msg(self, brake):
     self._brake = brake
@@ -173,10 +181,118 @@ class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
       self._rx(self.packer.make_can_msg_safety("Throttle_Hybrid", SUBARU_ALT_BUS, {"Brake": 0}))
       self.assertFalse(self.safety.get_brake_pressed_prev())
 
-  def test_cancel_message_blocked(self):
+  def test_es_distance_blocked(self):
     values = {"Cruise_Cancel": 1, "Cruise_Throttle": self.INACTIVE_GAS}
     for bus in (SUBARU_MAIN_BUS, SUBARU_ALT_BUS, SUBARU_CAM_BUS):
       self.assertFalse(self._tx(self.global_packer.make_can_msg_safety("ES_Distance", bus, values)))
+
+  # (message, length, byte and mask of the driver brake bit, signal values of a car frame)
+  RESENT_MSGS = (
+    ("Brake_Switch", 3, 1, 0x20, {"Brake_Late": 1, "Signal1": 0x2aa}),
+    ("BodyInfo", 8, 6, 0x40, {"Signal1": 0xa5a5a, "DOOR_OPEN_FR": 1, "Signal2": 0x15555, "LOWBEAM": 1, "WIPERS": 1}),
+  )
+
+  def _resent_msgs(self):
+    for name, length, brake_byte, brake_mask, values in self.RESENT_MSGS:
+      addr = SubaruMsg[name]
+      for counter in (0, 5, 15):
+        for car_brake in (False, True):
+          brake_sig = "Brake" if name == "Brake_Switch" else "BRAKE"
+          _, dat, _ = self.packer.make_can_msg(name, SUBARU_MAIN_BUS, {**values, "COUNTER": counter, brake_sig: car_brake})
+          self.assertEqual(length, len(dat))
+          self.assertEqual(car_brake, bool(dat[brake_byte] & brake_mask))
+          yield addr, bytearray(dat), brake_byte, brake_mask
+
+  @staticmethod
+  def _checksum(addr, dat):
+    return (sum(dat[1:]) + (addr & 0xFF) + (addr >> 8)) & 0xFF
+
+  def _resend(self, addr, dat, fix_checksum=True):
+    dat = bytearray(dat)
+    if fix_checksum:
+      dat[0] = self._checksum(addr, dat)
+    return self._tx(common.make_msg(SUBARU_CAM_BUS, addr, len(dat), bytes(dat)))
+
+  def test_resend_unchanged(self):
+    for addr, dat, _, _ in self._resent_msgs():
+      # nothing can be sent before the car's frame is seen
+      self._reset_safety_hooks()
+      self.assertFalse(self._resend(addr, dat))
+      self.assertTrue(self._rx(common.make_msg(SUBARU_MAIN_BUS, addr, len(dat), bytes(dat))))
+      self.assertTrue(self._resend(addr, dat))
+
+  def test_resend_brake_bit(self):
+    # the driver brake bit can be set to cancel ACC, with or without controls allowed. It can never be cleared
+    for addr, dat, brake_byte, brake_mask in self._resent_msgs():
+      for controls_allowed in (True, False):
+        self._reset_safety_hooks()
+        self._rx(common.make_msg(SUBARU_MAIN_BUS, addr, len(dat), bytes(dat)))
+        self.safety.set_controls_allowed(controls_allowed)
+
+        car_brake = bool(dat[brake_byte] & brake_mask)
+        pressed, released = bytearray(dat), bytearray(dat)
+        pressed[brake_byte] |= brake_mask
+        released[brake_byte] &= ~brake_mask & 0xFF
+        self.assertTrue(self._resend(addr, pressed))
+        self.assertEqual(not car_brake, self._resend(addr, released))
+
+  def test_resend_other_bits(self):
+    # every other bit must match the car's frame, including the counter
+    for addr, dat, brake_byte, brake_mask in self._resent_msgs():
+      self._reset_safety_hooks()
+      self._rx(common.make_msg(SUBARU_MAIN_BUS, addr, len(dat), bytes(dat)))
+      for bit in range(8, len(dat) * 8):
+        byte, mask = bit // 8, 1 << (bit % 8)
+        if (byte, mask) == (brake_byte, brake_mask):
+          continue
+        for set_brake in (False, True):
+          changed = bytearray(dat)
+          changed[byte] ^= mask
+          if set_brake:
+            changed[brake_byte] |= brake_mask
+          self.assertFalse(self._resend(addr, changed), (hex(addr), bit))
+      self.assertTrue(self._resend(addr, dat))
+
+  def test_resend_checksum(self):
+    for addr, dat, brake_byte, brake_mask in self._resent_msgs():
+      self._reset_safety_hooks()
+      self._rx(common.make_msg(SUBARU_MAIN_BUS, addr, len(dat), bytes(dat)))
+      pressed = bytearray(dat)
+      pressed[brake_byte] |= brake_mask
+      pressed[0] = self._checksum(addr, pressed)
+      for frame in (dat, pressed):
+        for checksum in range(256):
+          changed = bytearray(frame)
+          changed[0] = checksum
+          self.assertEqual(checksum == frame[0], self._resend(addr, changed, fix_checksum=False))
+
+  def test_resend_latest_frame_only(self):
+    frames = list(self._resent_msgs())
+    for (addr, dat, _, _), (addr_new, dat_new, _, _) in zip(frames, frames[1:], strict=False):
+      if addr != addr_new or dat[1] & 0xF == dat_new[1] & 0xF:
+        continue
+      self._reset_safety_hooks()
+      self._rx(common.make_msg(SUBARU_MAIN_BUS, addr, len(dat), bytes(dat)))
+      self._rx(common.make_msg(SUBARU_MAIN_BUS, addr, len(dat_new), bytes(dat_new)))
+      self.assertFalse(self._resend(addr, dat))
+      self.assertTrue(self._resend(addr, dat_new))
+
+  def test_resend_car_frame_bus(self):
+    # the car's frames are only taken from the main bus, and a frame of one message never allows the other
+    for addr, dat, _, _ in self._resent_msgs():
+      self._reset_safety_hooks()
+      for bus in (SUBARU_ALT_BUS, SUBARU_CAM_BUS):
+        self._rx(common.make_msg(bus, addr, len(dat), bytes(dat)))
+      self.safety.set_relay_malfunction(False)
+      self.assertFalse(self._resend(addr, dat))
+
+    (addr_a, dat_a, _, _), (addr_b, dat_b, _, _) = (next(m for m in self._resent_msgs() if m[0] == a) for a in self.HYBRID_CAM_MSGS)
+    self._reset_safety_hooks()
+    self._rx(common.make_msg(SUBARU_MAIN_BUS, addr_a, len(dat_a), bytes(dat_a)))
+    self.assertFalse(self._resend(addr_b, dat_b))
+    self._reset_safety_hooks()
+    self._rx(common.make_msg(SUBARU_MAIN_BUS, addr_b, len(dat_b), bytes(dat_b)))
+    self.assertFalse(self._resend(addr_a, dat_a))
 
 
 class TestSubaruGen2TorqueSafetyBase(TestSubaruTorqueSafetyBase):

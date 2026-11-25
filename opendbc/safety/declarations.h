@@ -328,6 +328,12 @@ typedef struct {
 
   uint8_t hyundai_last_button_interaction;  // button messages since the user pressed an enable button
 
+  // the car's latest Brake_Switch and BodyInfo on hybrids, the frames openpilot may resend to the camera
+  bool subaru_brake_switch_seen;
+  bool subaru_body_info_seen;
+  uint8_t subaru_brake_switch[8];
+  uint8_t subaru_body_info[8];
+
   bool tesla_stock_aeb;
   // Only rising edges while controls are not allowed are considered for these systems:
   // TODO: Only LKAS (non-emergency) is currently supported since we've only seen it

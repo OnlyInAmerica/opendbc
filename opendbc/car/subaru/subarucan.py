@@ -67,6 +67,52 @@ def create_es_distance(packer, frame, es_distance_msg, bus, pcm_cancel_cmd, long
   return packer.make_can_msg("ES_Distance", bus, values)
 
 
+def create_brake_switch(packer, brake_switch_msg, brake_pressed):
+  # The car's Brake_Switch, resent to the camera only. Used to cancel ACC on hybrids.
+  # Every bit is copied, including the counter, so the camera sees the same frame apart from the brake bit
+  values = {s: brake_switch_msg[s] for s in [
+    "COUNTER",
+    "Brake_Late",
+    "Brake",
+    "Signal1",
+  ]}
+
+  if brake_pressed:
+    values["Brake"] = 1
+
+  return packer.make_can_msg("Brake_Switch", CanBus.camera, values)
+
+
+def create_body_info(packer, body_info_msg, brake_pressed):
+  # The car's BodyInfo, resent to the camera only. Used to cancel ACC on hybrids.
+  # Every bit is copied, including the counter, so the camera sees the same frame apart from the brake bit
+  values = {s: body_info_msg[s] for s in [
+    "COUNTER",
+    "Signal1",
+    "DOOR_OPEN_FL",
+    "DOOR_OPEN_FR",
+    "DOOR_OPEN_RL",
+    "DOOR_OPEN_RR",
+    "DOOR_OPEN_TRUNK",
+    "Signal2",
+    "BRAKE",
+    "Signal3",
+    "DASH_BTN_LIGHTS",
+    "LOWBEAM",
+    "HIGHBEAM",
+    "Signal4",
+    "FOG_LIGHTS",
+    "Signal5",
+    "WIPERS",
+    "Signal6",
+  ]}
+
+  if brake_pressed:
+    values["BRAKE"] = 1
+
+  return packer.make_can_msg("BodyInfo", CanBus.camera, values)
+
+
 def create_es_lkas_state(packer, frame, es_lkas_state_msg, enabled, visual_alert, left_line, right_line, left_lane_depart, right_lane_depart):
   values = {s: es_lkas_state_msg[s] for s in [
     "CHECKSUM",
