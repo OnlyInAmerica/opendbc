@@ -91,10 +91,6 @@ class Footnote(Enum):
   GLOBAL = CarFootnote(
     "In the non-US market, openpilot requires the car to come equipped with EyeSight with Lane Keep Assistance.",
     Column.PACKAGE)
-  HYBRID_CANCEL = CarFootnote(
-    "openpilot cannot cancel the stock ACC on this car. When openpilot disengages on its own, " +
-    "ACC stays on until you press the brake pedal or the CRUISE switch.",
-    Column.LONGITUDINAL)
   EXP_LONG = CarFootnote(
     "Enabling longitudinal control (alpha) will disable all EyeSight functionality, including AEB, LDW, and RAB.",
     Column.LONGITUDINAL)
@@ -162,7 +158,7 @@ class CAR(Platforms):
   )
   # TODO: is there an XV and Impreza too?
   SUBARU_CROSSTREK_HYBRID = SubaruPlatformConfig(
-    [SubaruCarDocs("Subaru Crosstrek Hybrid 2020-21", car_parts=CarParts.common([CarHarness.subaru_b]), footnotes=[Footnote.GLOBAL, Footnote.HYBRID_CANCEL])],
+    [SubaruCarDocs("Subaru Crosstrek Hybrid 2020-21", car_parts=CarParts.common([CarHarness.subaru_b]), footnotes=[Footnote.GLOBAL])],
     CarSpecs(wheelbase=2.67, steerRatio=17),
     flags=SubaruFlags.HYBRID | SubaruFlags.STEER_RATE_LIMITED,
   )

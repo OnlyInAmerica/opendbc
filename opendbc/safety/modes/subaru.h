@@ -35,9 +35,12 @@
 #define MSG_SUBARU_ES_DashStatus         0x321U
 #define MSG_SUBARU_ES_LKAS_State         0x322U
 #define MSG_SUBARU_ES_Infotainment       0x323U
+#define MSG_SUBARU_Brake_Switch          0x147U
+#define MSG_SUBARU_BodyInfo              0x3acU
 
 #define SUBARU_MAIN_BUS 0U
 #define SUBARU_ALT_BUS  1U
+#define SUBARU_CAM_BUS  2U
 
 #define SUBARU_BASE_TX_MSGS(alt_bus, lkas_msg) \
   {(lkas_msg),                   SUBARU_MAIN_BUS, 8, .check_relay = true},  \
@@ -181,9 +184,12 @@ static safety_config subaru_init(uint16_t param) {
     SUBARU_COMMON_TX_MSGS(SUBARU_ALT_BUS)
   };
 
-  // hybrids have no ES_Distance, so there is no cancel message to allow
+  // hybrids have no ES_Distance. ACC is cancelled with the driver brake bit in the car's two main bus brake messages,
+  // which are blocked from the camera and resent by openpilot
   static const CanMsg SUBARU_HYBRID_TX_MSGS[] = {
     SUBARU_BASE_TX_MSGS(SUBARU_MAIN_BUS, MSG_SUBARU_ES_LKAS)
+    {MSG_SUBARU_Brake_Switch, SUBARU_CAM_BUS, 3, .check_relay = true},
+    {MSG_SUBARU_BodyInfo,     SUBARU_CAM_BUS, 8, .check_relay = true},
   };
 
   const uint16_t SUBARU_PARAM_GEN2 = 1;

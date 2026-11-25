@@ -14,8 +14,7 @@ class CarInterface(CarInterfaceBase):
   def _get_params(ret: structs.CarParams, candidate: CAR, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
     ret.brand = "subaru"
     ret.radarUnavailable = True
-    # Hybrids don't have ES_Distance and their cruise buttons aren't on CAN, so openpilot can't cancel the stock ACC.
-    # The Forester Hybrid stays in dashcam mode until its signals and safety are validated on a car
+    # The Forester Hybrid stays in dashcam mode until its signals, safety and ACC cancel are validated on a car
     ret.dashcamOnly = bool(ret.flags & (SubaruFlags.PREGLOBAL | SubaruFlags.LKAS_ANGLE)) or candidate == CAR.SUBARU_FORESTER_HYBRID
     ret.autoResumeSng = False
 

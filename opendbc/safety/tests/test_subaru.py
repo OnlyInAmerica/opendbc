@@ -24,6 +24,8 @@ class SubaruMsg(enum.IntEnum):
   ES_DashStatus     = 0x321
   ES_LKAS_State     = 0x322
   ES_Infotainment   = 0x323
+  Brake_Switch      = 0x147
+  BodyInfo          = 0x3ac
 
 
 SUBARU_MAIN_BUS = 0
@@ -120,11 +122,17 @@ class TestSubaruGen1TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSaf
 
 class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
   # Hybrids report driver gas, driver brake and the ACC state on the alt bus.
-  # There is no ES_Distance, so no cancel message is allowed
+  # There is no ES_Distance, ACC is cancelled through the brake bits sent to the camera
   DBC = "subaru_global_2020_hybrid_generated"
   SAFETY_PARAM = SubaruSafetyFlags.HYBRID
 
-  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance]
+  # Brake_Switch and BodyInfo are blocked from the camera and resent by openpilot, with the brake bit set to cancel ACC
+  HYBRID_CAM_MSGS = (SubaruMsg.Brake_Switch, SubaruMsg.BodyInfo)
+  TX_MSGS = [m for m in lkas_tx_msgs(SUBARU_MAIN_BUS) if m[0] != SubaruMsg.ES_Distance] + [[m, SUBARU_CAM_BUS] for m in HYBRID_CAM_MSGS]
+  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
+                                               SubaruMsg.ES_Infotainment),
+                             SUBARU_CAM_BUS: HYBRID_CAM_MSGS}
+  FWD_BLACKLISTED_ADDRS = {SUBARU_CAM_BUS: fwd_blacklisted_addr()[SUBARU_CAM_BUS], SUBARU_MAIN_BUS: list(HYBRID_CAM_MSGS)}
 
   def _user_brake_msg(self, brake):
     self._brake = brake
@@ -181,7 +189,7 @@ class TestSubaruGen1HybridTorqueSafety(TestSubaruTorqueSafetyBase):
       self._rx(self.packer.make_can_msg_safety("Throttle_Hybrid", SUBARU_ALT_BUS, {"Brake": 0}))
       self.assertFalse(self.safety.get_brake_pressed_prev())
 
-  def test_cancel_message_blocked(self):
+  def test_es_distance_blocked(self):
     values = {"Cruise_Cancel": 1, "Cruise_Throttle": self.INACTIVE_GAS}
     for bus in (SUBARU_MAIN_BUS, SUBARU_ALT_BUS, SUBARU_CAM_BUS):
       self.assertFalse(self._tx(self.global_packer.make_can_msg_safety("ES_Distance", bus, values)))
