@@ -210,29 +210,23 @@ class TestSubaruGen2TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSaf
   TX_MSGS = lkas_tx_msgs(SUBARU_ALT_BUS)
 
 
-# DEBUG: steering limit steps for the hybrid, selected by two bits of the safety param
-class TestSubaruGen1HybridSteerStep1TorqueSafety(TestSubaruGen1HybridTorqueSafety):
-  SAFETY_PARAM = SubaruSafetyFlags.HYBRID | SubaruSafetyFlags.HYBRID_STEER_STEP_1
-  MAX_TORQUE_LOOKUP = [0], [2600]
-  MAX_RATE_UP = 64
-  MAX_RATE_DOWN = 89
-  MAX_RT_DELTA = 1194
+# DEBUG: steering limit and ramp steps for the hybrid, each selected by two bits of the safety param
+HYBRID_STEER_STEPS = [2047, 2600, 3200, 4095]
+HYBRID_STEER_RAMPS = [(50, 70, 940), (64, 89, 1194), (78, 109, 1469), (100, 140, 1880)]
 
-
-class TestSubaruGen1HybridSteerStep2TorqueSafety(TestSubaruGen1HybridTorqueSafety):
-  SAFETY_PARAM = SubaruSafetyFlags.HYBRID | SubaruSafetyFlags.HYBRID_STEER_STEP_2
-  MAX_TORQUE_LOOKUP = [0], [3200]
-  MAX_RATE_UP = 78
-  MAX_RATE_DOWN = 109
-  MAX_RT_DELTA = 1469
-
-
-class TestSubaruGen1HybridSteerStep3TorqueSafety(TestSubaruGen1HybridTorqueSafety):
-  SAFETY_PARAM = SubaruSafetyFlags.HYBRID | SubaruSafetyFlags.HYBRID_STEER_STEP_1 | SubaruSafetyFlags.HYBRID_STEER_STEP_2
-  MAX_TORQUE_LOOKUP = [0], [4095]
-  MAX_RATE_UP = 100
-  MAX_RATE_DOWN = 140
-  MAX_RT_DELTA = 1880
+for _step, _max in enumerate(HYBRID_STEER_STEPS):
+  for _ramp, (_up, _down, _rt) in enumerate(HYBRID_STEER_RAMPS):
+    if _step == 0 and _ramp == 0:
+      continue
+    _name = f"TestSubaruGen1HybridSteerStep{_step}Ramp{_ramp}TorqueSafety"
+    globals()[_name] = type(_name, (TestSubaruGen1HybridTorqueSafety,), {
+      "__module__": __name__,
+      "SAFETY_PARAM": SubaruSafetyFlags.HYBRID | (_step << 4) | (_ramp << 6),
+      "MAX_TORQUE_LOOKUP": ([0], [_max]),
+      "MAX_RATE_UP": _up,
+      "MAX_RATE_DOWN": _down,
+      "MAX_RT_DELTA": _rt,
+    })
 
 
 if __name__ == "__main__":

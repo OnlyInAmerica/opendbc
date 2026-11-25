@@ -9,21 +9,30 @@ from opendbc.car.fw_query_definitions import FwQueryConfig, Request, StdQueries,
 Ecu = CarParams.Ecu
 
 
-# DEBUG: steering limit steps for the Crosstrek Hybrid, as (STEER_MAX, STEER_DELTA_UP, STEER_DELTA_DOWN).
-# The step is read once at startup from HYBRID_STEER_STEP_FILE and carried to the panda in the safety param.
-# The ramp scales with the limit, so every step takes the same 0.8s to reach its max. Step 0 is the port's limit.
-HYBRID_STEER_STEPS = [(2047, 50, 70), (2600, 64, 89), (3200, 78, 109), (4095, 100, 140)]
+# DEBUG: steering limit and ramp steps for the Crosstrek Hybrid. Both are read once at startup, from
+# HYBRID_STEER_STEP_FILE and HYBRID_STEER_RAMP_FILE, and carried to the panda in the safety param.
+# Step 0 of each is the port's value. Without a ramp file the ramp follows the limit step,
+# so the limit is reached in the same 0.8s
+HYBRID_STEER_STEPS = [2047, 2600, 3200, 4095]                  # STEER_MAX
+HYBRID_STEER_RAMPS = [(50, 70), (64, 89), (78, 109), (100, 140)]  # STEER_DELTA_UP, STEER_DELTA_DOWN
 HYBRID_STEER_STEP_FILE = "/data/subaru_steer_step"
+HYBRID_STEER_RAMP_FILE = "/data/subaru_steer_ramp"
 HYBRID_STEER_STEP_SHIFT = 4  # two bits of the safety param, above SubaruSafetyFlags.HYBRID
+HYBRID_STEER_RAMP_SHIFT = 6  # the next two bits
 
 
-def read_hybrid_steer_step() -> int:
+def _read_step(path: str, default: int) -> int:
   try:
-    with open(HYBRID_STEER_STEP_FILE) as f:
+    with open(path) as f:
       step = int(f.read().strip())
   except (OSError, ValueError):
-    return 0
-  return step if 0 <= step < len(HYBRID_STEER_STEPS) else 0
+    return default
+  return step if 0 <= step < 4 else default
+
+
+def read_hybrid_steer_step() -> tuple[int, int]:
+  step = _read_step(HYBRID_STEER_STEP_FILE, 0)
+  return step, _read_step(HYBRID_STEER_RAMP_FILE, step)
 
 
 class CarControllerParams:
@@ -48,8 +57,9 @@ class CarControllerParams:
 
     if CP.carFingerprint == CAR.SUBARU_CROSSTREK_HYBRID and len(CP.safetyConfigs) > 0:
       # DEBUG: stepped steering limit, the same step the panda enforces
-      step = (CP.safetyConfigs[0].safetyParam >> HYBRID_STEER_STEP_SHIFT) & 0x3
-      self.STEER_MAX, self.STEER_DELTA_UP, self.STEER_DELTA_DOWN = HYBRID_STEER_STEPS[step]
+      safety_param = CP.safetyConfigs[0].safetyParam
+      self.STEER_MAX = HYBRID_STEER_STEPS[(safety_param >> HYBRID_STEER_STEP_SHIFT) & 0x3]
+      self.STEER_DELTA_UP, self.STEER_DELTA_DOWN = HYBRID_STEER_RAMPS[(safety_param >> HYBRID_STEER_RAMP_SHIFT) & 0x3]
 
   THROTTLE_MIN = 808
   THROTTLE_MAX = 3400
@@ -83,6 +93,9 @@ class SubaruSafetyFlags(IntFlag):
   # DEBUG: two bit steering limit step for the hybrid
   HYBRID_STEER_STEP_1 = 16
   HYBRID_STEER_STEP_2 = 32
+  # DEBUG: two bit steering ramp step for the hybrid
+  HYBRID_STEER_RAMP_1 = 64
+  HYBRID_STEER_RAMP_2 = 128
 
 
 class SubaruFlags(IntFlag):

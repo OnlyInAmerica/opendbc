@@ -379,6 +379,7 @@ typedef struct {
   bool subaru_gen2;
   bool subaru_hybrid;
   uint8_t subaru_hybrid_steer_step;  // DEBUG
+  uint8_t subaru_hybrid_steer_ramp;  // DEBUG
   bool subaru_pg_reversed_driver_torque;
 
   bool tesla_longitudinal;

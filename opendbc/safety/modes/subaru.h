@@ -136,13 +136,20 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
   const TorqueSteeringLimits SUBARU_STEERING_LIMITS      = SUBARU_STEERING_LIMITS_GENERATOR(2047, 50, 70);
   const TorqueSteeringLimits SUBARU_GEN2_STEERING_LIMITS = SUBARU_STEERING_LIMITS_GENERATOR(1000, 40, 40);
 
-  // DEBUG: steering limit steps for the hybrid, selected by two bits of the safety param.
-  // The ramp and the real time limit scale with the max, step 0 is the default limit
-  const TorqueSteeringLimits SUBARU_HYBRID_STEERING_LIMITS[4] = {
-    SUBARU_STEERING_LIMITS_GENERATOR_RT(2047, 50, 70, 940),
-    SUBARU_STEERING_LIMITS_GENERATOR_RT(2600, 64, 89, 1194),
-    SUBARU_STEERING_LIMITS_GENERATOR_RT(3200, 78, 109, 1469),
-    SUBARU_STEERING_LIMITS_GENERATOR_RT(4095, 100, 140, 1880),
+  // DEBUG: steering limit and ramp steps for the hybrid, each selected by two bits of the safety param.
+  // The real time limit scales with the ramp. Step 0 of each is the default
+#define SUBARU_HYBRID_STEERING_RAMPS(steer_max)                     \
+  {                                                                 \
+    SUBARU_STEERING_LIMITS_GENERATOR_RT((steer_max), 50, 70, 940),   \
+    SUBARU_STEERING_LIMITS_GENERATOR_RT((steer_max), 64, 89, 1194),  \
+    SUBARU_STEERING_LIMITS_GENERATOR_RT((steer_max), 78, 109, 1469), \
+    SUBARU_STEERING_LIMITS_GENERATOR_RT((steer_max), 100, 140, 1880) \
+  }
+  const TorqueSteeringLimits SUBARU_HYBRID_STEERING_LIMITS[4][4] = {
+    SUBARU_HYBRID_STEERING_RAMPS(2047),
+    SUBARU_HYBRID_STEERING_RAMPS(2600),
+    SUBARU_HYBRID_STEERING_RAMPS(3200),
+    SUBARU_HYBRID_STEERING_RAMPS(4095),
   };
 
   const LongitudinalLimits SUBARU_LONG_LIMITS = {
@@ -165,7 +172,7 @@ static bool subaru_tx_hook(const CANPacket_t *msg) {
     bool steer_req = GET_BIT(msg, 29U);
 
     if (safety_setup.subaru_hybrid) {
-      violation = steer_torque_cmd_checks(desired_torque, steer_req, SUBARU_HYBRID_STEERING_LIMITS[safety_setup.subaru_hybrid_steer_step]);
+      violation = steer_torque_cmd_checks(desired_torque, steer_req, SUBARU_HYBRID_STEERING_LIMITS[safety_setup.subaru_hybrid_steer_step][safety_setup.subaru_hybrid_steer_ramp]);
     } else {
       const TorqueSteeringLimits limits = safety_setup.subaru_gen2 ? SUBARU_GEN2_STEERING_LIMITS : SUBARU_STEERING_LIMITS;
       violation = steer_torque_cmd_checks(desired_torque, steer_req, limits);
@@ -214,6 +221,7 @@ static safety_config subaru_init(uint16_t param) {
   safety_setup.subaru_gen2 = GET_FLAG(param, SUBARU_PARAM_GEN2);
   safety_setup.subaru_hybrid = GET_FLAG(param, SUBARU_PARAM_HYBRID);
   safety_setup.subaru_hybrid_steer_step = (uint8_t)((param >> 4U) & 0x3U);  // DEBUG
+  safety_setup.subaru_hybrid_steer_ramp = (uint8_t)((param >> 6U) & 0x3U);  // DEBUG
 
   // TODO: re-enable once more work is done on the limits
   // revert this in the PR that re-enables Subaru longitudinal: https://github.com/commaai/opendbc/pull/3689
